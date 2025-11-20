@@ -52,6 +52,7 @@ class GameState(BaseModel):
     winner: Optional[Player] = None
     last_move: Optional[MoveInfo] = None
     utilities: Dict[Player, float]
+    created_at: str
 
 
 class MoveRequest(BaseModel):

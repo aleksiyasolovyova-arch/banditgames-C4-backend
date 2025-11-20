@@ -1,10 +1,11 @@
 # app/game.py
 from __future__ import annotations
 
+from datetime import datetime, UTC
 from typing import List, Optional, Dict
 import random
 
-from schemas import (
+from app.schemas import (
     GameConfig, Player, PlayerType, GameStatus,
     GameState, MoveInfo
 )
@@ -28,6 +29,7 @@ class ConnectFourGame:
         self.winner: Optional[Player] = None
         self.turn_index = 0
         self.move_history: List[MoveInfo] = []
+        self.created_at = datetime.now(UTC).isoformat()
 
     # ---------------- Utility ----------------
 
@@ -79,7 +81,7 @@ class ConnectFourGame:
         self.turn_index += 1
 
         if self._has_winning_line(token):
-            self.status = GameStatus.WWIN
+            self.status = GameStatus.WIN
             self.winner = player
         elif not self.legal_actions():
             self.status = GameStatus.DRAW
@@ -110,6 +112,7 @@ class ConnectFourGame:
             winner=self.winner,
             last_move=last_move,
             utilities=utilities,
+            created_at=self.created_at,
         )
 
     def get_history(self) -> List[MoveInfo]:

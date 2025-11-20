@@ -7,20 +7,42 @@ from typing import Dict, List
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
-from .schemas import (
+from app.schemas import (
     GameConfig, GameState, MoveRequest, MoveInfo,
     TransitionLogEntry, Player, PlayerType
 )
-from .game import ConnectFourGame
-from .logger import TransitionLogger
-
-
-app = FastAPI(title="Connect Four Backend")
+from app.game import ConnectFourGame
+from app.logger import TransitionLogger
 
 GAME_SESSIONS: Dict[str, ConnectFourGame] = {}
 
 
+# -------------------------------
+# Lifespan (instead of on_event)
+# -------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    app.state.logger = TransitionLogger("logs/game_transitions.jsonl")
+    print("Logger initialized.")
+
+    yield  # Application runs here
+
+    # Shutdown
+    print("Shutting down...")
+    # Nothing special required for synchronous logger
+
+
+app = FastAPI(
+    title="Connect Four Backend",
+    lifespan=lifespan
+)
+
+# -------------------------------
+# Middleware
+# -------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,17 +51,18 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def startup_event():
-    app.state.logger = TransitionLogger("logs/game_transitions.jsonl")
-
-
+# -------------------------------
+# Helpers
+# -------------------------------
 def get_game(game_id: str) -> ConnectFourGame:
     if game_id not in GAME_SESSIONS:
         raise HTTPException(404, "Game not found.")
     return GAME_SESSIONS[game_id]
 
 
+# -------------------------------
+# Endpoints
+# -------------------------------
 @app.post("/games", response_model=GameState)
 def create_game(config: GameConfig):
     game_id = str(uuid.uuid4())
