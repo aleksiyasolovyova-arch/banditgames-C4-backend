@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field
 
 
@@ -65,7 +65,7 @@ class TransitionLogEntry(BaseModel):
     game_id: str
     move_index: int
     player: Player
-    action: Dict[str, int]
+    action: Dict[str, Any]
     prev_state: GameState
     next_state: GameState
     reward: float

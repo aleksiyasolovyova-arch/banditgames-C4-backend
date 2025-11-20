@@ -1,3 +1,4 @@
 fastapi
 uvicorn[standard]
 pydantic
+numpy==2.3.5
