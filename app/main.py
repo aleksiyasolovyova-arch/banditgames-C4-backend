@@ -1,38 +1,53 @@
-# app/main.py
+# app/main.py - Updated with RabbitMQ Publisher
 from __future__ import annotations
 
 import uuid
+import os
 from datetime import datetime
 from typing import Dict, List
+from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
 from app.schemas import (
     GameConfig, GameState, MoveRequest, MoveInfo,
-    TransitionLogEntry, Player, PlayerType
+    TransitionLogEntry, Player, PlayerType, GameStatus
 )
 from app.game import ConnectFourGame
 from app.logger import TransitionLogger
+from app.rabbitmq_publisher import RabbitMQPublisher
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 GAME_SESSIONS: Dict[str, ConnectFourGame] = {}
 
 
 # -------------------------------
-# Lifespan (instead of on_event)
+# Lifespan with RabbitMQ
 # -------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    os.makedirs("logs", exist_ok=True)
     app.state.logger = TransitionLogger("logs/game_transitions.jsonl")
-    print("Logger initialized.")
+
+    # Initialize RabbitMQ publisher
+    try:
+        app.state.rabbitmq = RabbitMQPublisher()
+        logger.info("RabbitMQ Publisher initialized")
+    except Exception as e:
+        logger.warning(f"RabbitMQ not available: {e}")
+        app.state.rabbitmq = None
 
     yield  # Application runs here
 
     # Shutdown
-    print("Shutting down...")
-    # Nothing special required for synchronous logger
+    if app.state.rabbitmq:
+        app.state.rabbitmq.close()
+    logger.info("Shutting down...")
 
 
 app = FastAPI(
@@ -65,26 +80,38 @@ def get_game(game_id: str) -> ConnectFourGame:
 # -------------------------------
 @app.post("/games", response_model=GameState)
 def create_game(config: GameConfig):
+    """Create a new game"""
     game_id = str(uuid.uuid4())
     game = ConnectFourGame(game_id, config)
     GAME_SESSIONS[game_id] = game
+
+    # Publish game created event if RabbitMQ is available
+    if app.state.rabbitmq:
+        app.state.rabbitmq.publish_game_created(
+            game_id=game_id,
+            config=config.model_dump()
+        )
+
     return game.get_state()
 
 
 @app.get("/games/{game_id}", response_model=GameState)
 def get_state(game_id: str):
+    """Get current game state"""
     return get_game(game_id).get_state()
 
 
 @app.get("/games/{game_id}/history", response_model=List[MoveInfo])
 def get_history(game_id: str):
+    """Get game history"""
     return get_game(game_id).get_history()
 
 
 @app.post("/games/{game_id}/moves", response_model=GameState)
 def make_move(game_id: str, move: MoveRequest):
+    """Make a move (human or AI via API call from MCTS)"""
     game = get_game(game_id)
-    logger: TransitionLogger = app.state.logger
+    logger_obj: TransitionLogger = app.state.logger
 
     prev_state = game.get_state()
     acting = move.player or prev_state.current_player
@@ -92,9 +119,11 @@ def make_move(game_id: str, move: MoveRequest):
     if acting != prev_state.current_player:
         raise HTTPException(400, f"It is {prev_state.current_player}'s turn.")
 
+    # Make the move
     next_state = game.play_move(move.column)
     reward = next_state.utilities[acting]
 
+    # Log the move
     log_entry = TransitionLogEntry(
         timestamp=datetime.utcnow().isoformat(),
         game_id=game_id,
@@ -105,38 +134,83 @@ def make_move(game_id: str, move: MoveRequest):
         next_state=next_state,
         reward=reward,
     )
+    logger_obj.log(log_entry.model_dump(mode="json"))
 
-    logger.log(log_entry.model_dump(mode="json"))
+    # Publish events based on move type and game state
+    if app.state.rabbitmq:
+        if acting == Player.PLAYER1:
+            # Human move was made
+            app.state.rabbitmq.publish_human_move(
+                game_id=game_id,
+                player=acting.value,
+                column=move.column,
+                board=next_state.board,
+                current_player=next_state.current_player.value,
+                status=next_state.status.value
+            )
+
+            # If next player is CPU and game not over, publish AI needed event
+            if (next_state.current_player == Player.PLAYER2 and
+                    game.config.player2_type == PlayerType.CPU and
+                    next_state.status == GameStatus.IN_PROGRESS):
+                app.state.rabbitmq.publish_ai_move_needed(
+                    game_id=game_id,
+                    board=next_state.board,
+                    current_player=2
+                )
+
+        # Check if game ended
+        if next_state.status != GameStatus.IN_PROGRESS:
+            winner = next_state.winner.value if next_state.winner else "draw"
+            app.state.rabbitmq.publish_game_ended(
+                game_id=game_id,
+                winner=winner,
+                final_board=next_state.board
+            )
+
     return next_state
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "games_active": len(GAME_SESSIONS),
+        "rabbitmq_connected": app.state.rabbitmq is not None
+    }
 
-@app.post("/games/{game_id}/moves/auto", response_model=GameState)
-def auto_move(game_id: str):
-    game = get_game(game_id)
-    logger: TransitionLogger = app.state.logger
 
-    prev = game.get_state()
+@app.delete("/games/{game_id}")
+def delete_game(game_id: str):
+    """Delete a game"""
+    if game_id not in GAME_SESSIONS:
+        raise HTTPException(404, "Game not found")
 
-    if game.config.player2_type != PlayerType.CPU:
-        raise HTTPException(400, "Game is not vs CPU.")
+    del GAME_SESSIONS[game_id]
+    return {"message": "Game deleted"}
 
-    if prev.current_player != Player.PLAYER2:
-        raise HTTPException(400, "Not CPU's turn.")
 
-    column = game.select_cpu_action()
-    next_state = game.play_move(column)
-    reward = next_state.utilities[Player.PLAYER2]
+@app.post("/games/ai-vs-ai")
+async def create_ai_vs_ai_game():
+    """Create and run an AI vs AI game"""
 
-    log_entry = TransitionLogEntry(
-        timestamp=datetime.utcnow().isoformat(),
-        game_id=game_id,
-        move_index=next_state.turn_index - 1,
-        player=Player.PLAYER2,
-        action={"column": column},
-        prev_state=prev,
-        next_state=next_state,
-        reward=reward,
+    # Create game with both players as CPU
+    config = GameConfig(
+        player1_type=PlayerType.CPU,
+        player2_type=PlayerType.CPU
     )
+    game_id = str(uuid.uuid4())
+    game = ConnectFourGame(game_id, config)
+    GAME_SESSIONS[game_id] = game
 
-    logger.log(log_entry.model_dump(mode="json"))
-    return next_state
+    # Publish event for MCTS to handle both players
+    if app.state.rabbitmq:
+        app.state.rabbitmq.publish_event('game.ai_vs_ai.created', {
+            'event_id': str(uuid.uuid4()),
+            'event_type': 'ai_vs_ai.created',
+            'game_id': game_id,
+            'skill_level_p1': 'medium',
+            'skill_level_p2': 'expert'
+        })
+
+    return {"game_id": game_id, "message": "AI vs AI game started"}
