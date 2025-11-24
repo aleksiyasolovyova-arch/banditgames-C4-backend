@@ -21,7 +21,7 @@ class GameStatus(str, Enum):
     WIN = "win"
     DRAW = "draw"
 
-
+# A request DTO
 class GameConfig(BaseModel):
     rows: int = Field(6, ge=4)
     cols: int = Field(7, ge=4)
@@ -40,7 +40,7 @@ class MoveInfo(BaseModel):
     column: int
     row: int
 
-
+# A response DTO
 class GameState(BaseModel):
     game_id: str
     config: GameConfig
@@ -54,12 +54,12 @@ class GameState(BaseModel):
     utilities: Dict[Player, float]
     created_at: str
 
-
+# A request DTO
 class MoveRequest(BaseModel):
     column: int = Field(..., ge=0)
     player: Optional[Player] = None
 
-
+# Just a logger will dissapear later
 class TransitionLogEntry(BaseModel):
     timestamp: str
     game_id: str

@@ -6,21 +6,16 @@ import os
 from datetime import datetime
 from typing import Dict, List
 from contextlib import asynccontextmanager
-import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.schemas import (
     GameConfig, GameState, MoveRequest, MoveInfo,
-    TransitionLogEntry, Player, PlayerType, GameStatus
+    Player, PlayerType, GameStatus
 )
 from app.game import ConnectFourGame
-from app.logger import TransitionLogger
 from app.rabbitmq_publisher import RabbitMQPublisher
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 GAME_SESSIONS: Dict[str, ConnectFourGame] = {}
 
@@ -30,16 +25,10 @@ GAME_SESSIONS: Dict[str, ConnectFourGame] = {}
 # -------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    os.makedirs("logs", exist_ok=True)
-    app.state.logger = TransitionLogger("logs/game_transitions.jsonl")
-
     # Initialize RabbitMQ publisher
     try:
         app.state.rabbitmq = RabbitMQPublisher()
-        logger.info("RabbitMQ Publisher initialized")
     except Exception as e:
-        logger.warning(f"RabbitMQ not available: {e}")
         app.state.rabbitmq = None
 
     yield  # Application runs here
@@ -47,7 +36,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if app.state.rabbitmq:
         app.state.rabbitmq.close()
-    logger.info("Shutting down...")
 
 
 app = FastAPI(
@@ -111,7 +99,6 @@ def get_history(game_id: str):
 def make_move(game_id: str, move: MoveRequest):
     """Make a move (human or AI via API call from MCTS)"""
     game = get_game(game_id)
-    logger_obj: TransitionLogger = app.state.logger
 
     prev_state = game.get_state()
     acting = move.player or prev_state.current_player
@@ -122,19 +109,6 @@ def make_move(game_id: str, move: MoveRequest):
     # Make the move
     next_state = game.play_move(move.column)
     reward = next_state.utilities[acting]
-
-    # Log the move
-    log_entry = TransitionLogEntry(
-        timestamp=datetime.utcnow().isoformat(),
-        game_id=game_id,
-        move_index=next_state.turn_index - 1,
-        player=acting,
-        action={"column": move.column},
-        prev_state=prev_state,
-        next_state=next_state,
-        reward=reward,
-    )
-    logger_obj.log(log_entry.model_dump(mode="json"))
 
     # Publish events based on move type and game state
     if app.state.rabbitmq:
