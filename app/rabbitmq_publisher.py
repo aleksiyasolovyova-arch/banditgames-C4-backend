@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class RabbitMQPublisher:
     """Publisher for Connect4 game events"""
 
-    def __init__(self, host='rabbitmq', port=5672, username='guest', password='guest'):
+    def __init__(self, host='rabbitmq', port=5672, username='user', password='password'):
         self.host = host
         self.port = port
         self.credentials = pika.PlainCredentials(username, password)
