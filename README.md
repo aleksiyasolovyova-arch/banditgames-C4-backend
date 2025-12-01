@@ -14,3 +14,6 @@ Game description:
 
 
 Game structure:
+
+Backend:
+Frontend:
