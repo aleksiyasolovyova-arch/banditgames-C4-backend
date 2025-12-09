@@ -9,11 +9,15 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # ---------------------------------------
-# 3. Install system dependencies (optional)
-#    gcc is often needed for some pip packages
+# 3. Install system dependencies
+#    - build-essential: for compiling pip packages
+#    - curl: for healthcheck
+#    - libpq-dev: for psycopg2 (PostgreSQL driver)
 # ---------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
+    libpq-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------
@@ -31,13 +35,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ---------------------------------------
 COPY app ./app
 
-# Create log directory
-RUN mkdir -p logs
+# Create log and data directories
+RUN mkdir -p logs data
 
 # ---------------------------------------
 # 7. Set a non-root user (good practice)
 # ---------------------------------------
-RUN useradd -ms /bin/bash appuser
+RUN useradd -ms /bin/bash appuser && \
+    chown -R appuser:appuser /app
 USER appuser
 
 # ---------------------------------------
@@ -46,6 +51,12 @@ USER appuser
 EXPOSE 8000
 
 # ---------------------------------------
-# 9. Start the FastAPI server
+# 9. Healthcheck
+# ---------------------------------------
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# ---------------------------------------
+# 10. Start the FastAPI server
 # ---------------------------------------
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
