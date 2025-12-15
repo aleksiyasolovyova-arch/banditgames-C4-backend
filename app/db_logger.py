@@ -550,6 +550,136 @@ class DatabaseLogger:
                 cur.execute(query, params)
                 return [dict(row) for row in cur.fetchall()]
 
+    def log_oracle_analysis(
+            self,
+            game_id: str,
+            move_index: int,
+            state_hash: str,
+            board_state: list,
+            current_player: str,
+            best_move: int,
+            move_ranking: List[int],
+            visit_counts: Dict[int, int],
+            q_values: Dict[int, float],
+            probabilities: Dict[int, float],
+            num_rollouts: int,
+            search_time: float,
+            exploration_constant: float = 0.5,
+            actual_move: int = None,
+            move_id: str = None
+    ) -> str:
+        """
+        Log oracle analysis for a board position.
+
+        Args:
+            game_id: Game identifier
+            move_index: Move number in the game
+            state_hash: Hash of the board state
+            board_state: The board as 2D list
+            current_player: 'player1' or 'player2'
+            best_move: Oracle's recommended best move
+            move_ranking: All moves ranked by strength [best, 2nd, ...]
+            visit_counts: Visit counts for each move {col: count}
+            q_values: Q values for each move {col: value}
+            probabilities: Move probabilities {col: prob}
+            num_rollouts: Total rollouts performed
+            search_time: Time spent analyzing in seconds
+            exploration_constant: MCTS exploration constant used
+            actual_move: The move that was actually played (optional)
+            move_id: Reference to moves table (optional)
+
+        Returns:
+            analysis_id
+        """
+        analysis_id = str(uuid.uuid4())
+
+        # Calculate comparison metrics if actual move provided
+        actual_move_rank = None
+        move_agreement = None
+        best_move_q = None
+        actual_move_q = None
+        q_value_loss = None
+
+        if actual_move is not None:
+            try:
+                actual_move_rank = move_ranking.index(actual_move) + 1  # 1-indexed
+                move_agreement = (actual_move == best_move)
+            except ValueError:
+                actual_move_rank = len(move_ranking) + 1  # Worst possible
+                move_agreement = False
+
+            # Calculate Q-value loss
+            best_move_q = q_values.get(best_move, 0.0)
+            actual_move_q = q_values.get(actual_move, 0.0)
+            q_value_loss = best_move_q - actual_move_q
+
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                # Try to look up move_id if not provided
+                if move_id is None:
+                    cur.execute("""
+                        SELECT move_id FROM connect4.moves 
+                        WHERE game_id = %s AND move_index = %s
+                    """, (game_id, move_index))
+                    row = cur.fetchone()
+                    if row:
+                        move_id = str(row[0])
+
+                cur.execute("""
+                    INSERT INTO connect4.oracle_analysis (
+                        analysis_id, game_id, move_id, move_index,
+                        state_hash, board_state, current_player,
+                        best_move, move_ranking,
+                        visit_counts, q_values, probabilities,
+                        num_rollouts, search_time_seconds, exploration_constant,
+                        actual_move, actual_move_rank, move_agreement,
+                        best_move_q, actual_move_q, q_value_loss
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (game_id, move_index) DO UPDATE SET
+                        best_move = EXCLUDED.best_move,
+                        move_ranking = EXCLUDED.move_ranking,
+                        visit_counts = EXCLUDED.visit_counts,
+                        q_values = EXCLUDED.q_values,
+                        probabilities = EXCLUDED.probabilities,
+                        num_rollouts = EXCLUDED.num_rollouts,
+                        search_time_seconds = EXCLUDED.search_time_seconds,
+                        actual_move = EXCLUDED.actual_move,
+                        actual_move_rank = EXCLUDED.actual_move_rank,
+                        move_agreement = EXCLUDED.move_agreement,
+                        best_move_q = EXCLUDED.best_move_q,
+                        actual_move_q = EXCLUDED.actual_move_q,
+                        q_value_loss = EXCLUDED.q_value_loss
+                """, (
+                    analysis_id,
+                    game_id,
+                    move_id,
+                    move_index,
+                    state_hash,
+                    Json(board_state),
+                    current_player,
+                    best_move,
+                    move_ranking,
+                    Json({str(k): v for k, v in visit_counts.items()}),
+                    Json({str(k): v for k, v in q_values.items()}),
+                    Json({str(k): v for k, v in probabilities.items()}),
+                    num_rollouts,
+                    search_time,
+                    exploration_constant,
+                    actual_move,
+                    actual_move_rank,
+                    move_agreement,
+                    best_move_q,
+                    actual_move_q,
+                    q_value_loss
+                ))
+
+        logger.info(f"Logged oracle analysis for game {game_id} move {move_index}: "
+                    f"best={best_move}, actual={actual_move}, rank={actual_move_rank}, "
+                    f"agreement={move_agreement}")
+
+        return analysis_id
+
 
 # SINGLETON INSTANCE
 
@@ -577,127 +707,3 @@ def close_db_logger():
     if db_logger:
         db_logger.close()
         db_logger = None
-
-
-# =============================================================================
-# ADD THIS METHOD TO db_logger.py (DatabaseLogger class)
-# =============================================================================
-
-def log_oracle_analysis(
-        self,
-        game_id: str,
-        move_index: int,
-        state_hash: str,
-        board_state: list,
-        current_player: str,
-        best_move: int,
-        move_ranking: List[int],
-        visit_counts: Dict[int, int],
-        q_values: Dict[int, float],
-        probabilities: Dict[int, float],
-        num_rollouts: int,
-        search_time: float,
-        exploration_constant: float = 0.5,
-        actual_move: int = None,
-        move_id: str = None
-) -> str:
-    """
-    Log oracle analysis for a board position.
-
-    Args:
-        game_id: Game identifier
-        move_index: Move number in the game
-        state_hash: Hash of the board state
-        board_state: The board as 2D list
-        current_player: 'player1' or 'player2'
-        best_move: Oracle's recommended best move
-        move_ranking: All moves ranked by strength [best, 2nd, ...]
-        visit_counts: Visit counts for each move {col: count}
-        q_values: Q values for each move {col: value}
-        probabilities: Move probabilities {col: prob}
-        num_rollouts: Total rollouts performed
-        search_time: Time spent analyzing in seconds
-        exploration_constant: MCTS exploration constant used
-        actual_move: The move that was actually played (optional)
-        move_id: Reference to moves table (optional)
-
-    Returns:
-        analysis_id
-    """
-    analysis_id = str(uuid.uuid4())
-
-    # Calculate comparison metrics if actual move provided
-    actual_move_rank = None
-    move_agreement = None
-    best_move_q = None
-    actual_move_q = None
-    q_value_loss = None
-
-    if actual_move is not None:
-        try:
-            actual_move_rank = move_ranking.index(actual_move) + 1  # 1-indexed
-            move_agreement = (actual_move == best_move)
-        except ValueError:
-            actual_move_rank = len(move_ranking) + 1  # Worst possible
-            move_agreement = False
-
-        # Calculate Q-value loss
-        best_move_q = q_values.get(best_move, 0.0)
-        actual_move_q = q_values.get(actual_move, 0.0)
-        q_value_loss = best_move_q - actual_move_q
-
-    with self.get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                        INSERT INTO connect4.oracle_analysis (analysis_id, game_id, move_id, move_index,
-                                                              state_hash, board_state, current_player,
-                                                              best_move, move_ranking,
-                                                              visit_counts, q_values, probabilities,
-                                                              num_rollouts, search_time_seconds, exploration_constant,
-                                                              actual_move, actual_move_rank, move_agreement,
-                                                              best_move_q, actual_move_q, q_value_loss)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                                %s) ON CONFLICT (game_id, move_index) DO
-                        UPDATE SET
-                            best_move = EXCLUDED.best_move,
-                            move_ranking = EXCLUDED.move_ranking,
-                            visit_counts = EXCLUDED.visit_counts,
-                            q_values = EXCLUDED.q_values,
-                            probabilities = EXCLUDED.probabilities,
-                            num_rollouts = EXCLUDED.num_rollouts,
-                            search_time_seconds = EXCLUDED.search_time_seconds,
-                            actual_move = EXCLUDED.actual_move,
-                            actual_move_rank = EXCLUDED.actual_move_rank,
-                            move_agreement = EXCLUDED.move_agreement,
-                            best_move_q = EXCLUDED.best_move_q,
-                            actual_move_q = EXCLUDED.actual_move_q,
-                            q_value_loss = EXCLUDED.q_value_loss
-                        """, (
-                            analysis_id,
-                            game_id,
-                            move_id,
-                            move_index,
-                            state_hash,
-                            Json(board_state),
-                            current_player,
-                            best_move,
-                            move_ranking,
-                            Json({str(k): v for k, v in visit_counts.items()}),
-                            Json({str(k): v for k, v in q_values.items()}),
-                            Json({str(k): v for k, v in probabilities.items()}),
-                            num_rollouts,
-                            search_time,
-                            exploration_constant,
-                            actual_move,
-                            actual_move_rank,
-                            move_agreement,
-                            best_move_q,
-                            actual_move_q,
-                            q_value_loss
-                        ))
-
-    logger.info(f"Logged oracle analysis for game {game_id} move {move_index}: "
-                f"best={best_move}, actual={actual_move}, rank={actual_move_rank}, "
-                f"agreement={move_agreement}")
-
-    return analysis_id

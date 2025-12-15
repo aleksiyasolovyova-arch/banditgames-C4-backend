@@ -26,7 +26,7 @@ from app.schemas import (
     MCTSStatistics, TransitionLogEntry,
     SelfPlayConfig, SelfPlaySession,
     GameReplay, ReplayFrame,
-    DatasetExportRequest, DatasetExportResult
+    DatasetExportRequest, DatasetExportResult,OracleLogRequest
 )
 
 from app.game import ConnectFourGame
@@ -437,14 +437,16 @@ def make_move(game_id: str, request: MoveRequest):
                 dda_adjustment=dda_adjustment
             )
 
-        # Publish generic move event
+        # Publish generic move event (includes board_before for oracle analysis)
         app.state.rabbitmq.publish_event('game.move.made', {
             'event_id': str(uuid.uuid4()),
             'event_type': 'game.move.made',
             'game_id': game_id,
             'player': acting.value,
             'column': request.column,
-            'turn_index': prev_state.turn_index
+            'turn_index': prev_state.turn_index,
+            'board_before': prev_state.board,
+            'current_player': 1 if acting == Player.PLAYER1 else 2
         })
 
     return next_state
@@ -700,3 +702,37 @@ def get_stats():
             stats['db_error'] = str(e)
 
     return stats
+
+
+@app.post("/oracle/log")
+async def log_oracle_analysis(request: OracleLogRequest):
+    """Log oracle analysis for a game position"""
+    try:
+        # Convert string keys back to int for the dicts
+        visit_counts = {int(k): v for k, v in request.visit_counts.items()}
+        q_values = {int(k): v for k, v in request.q_values.items()}
+        probabilities = {int(k): v for k, v in request.probabilities.items()}
+
+        analysis_id = app.state.db_logger.log_oracle_analysis(
+            game_id=request.game_id,
+            move_index=request.move_index,
+            state_hash=request.state_hash,
+            board_state=request.board_state,
+            current_player=request.current_player,
+            best_move=request.best_move,
+            move_ranking=request.move_ranking,
+            visit_counts=visit_counts,
+            q_values=q_values,
+            probabilities=probabilities,
+            num_rollouts=request.num_rollouts,
+            search_time=request.search_time,
+            exploration_constant=request.exploration_constant,
+            actual_move=request.actual_move,
+            move_id=request.move_id
+        )
+
+        return {"status": "ok", "analysis_id": analysis_id}
+
+    except Exception as e:
+        logger.error(f"Failed to log oracle analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

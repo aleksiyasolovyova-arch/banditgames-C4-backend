@@ -336,3 +336,21 @@ class DatasetExportResult(BaseModel):
     dvc_tracked: bool = False
     minio_uploaded: bool = False
     created_at: str
+
+
+class OracleLogRequest(BaseModel):
+    game_id: str
+    move_index: int
+    state_hash: Optional[str] = None
+    board_state: Optional[List[List[str]]] = None
+    current_player: Optional[str] = None
+    best_move: int
+    move_ranking: List[int]
+    visit_counts: Dict[str, int]
+    q_values: Dict[str, float]
+    probabilities: Dict[str, float]
+    num_rollouts: int
+    search_time: float
+    exploration_constant: Optional[float] = 0.5
+    actual_move: Optional[int] = None
+    move_id: Optional[str] = None

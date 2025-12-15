@@ -149,7 +149,9 @@ class RabbitMQPublisher:
             board: list,
             current_player: str,
             status: str,
-            thinking_time_ms: int = None
+            thinking_time_ms: int = None,
+            board_before: list = None,
+            move_index: int = None
     ):
         """Publish human move made event"""
         event = {
@@ -162,7 +164,9 @@ class RabbitMQPublisher:
             'board': board,
             'current_player': current_player,
             'status': status,
-            'thinking_time_ms': thinking_time_ms
+            'thinking_time_ms': thinking_time_ms,
+            'board_before': board_before,
+            'move_index': move_index
         }
         self.publish_event('human.move.made', event)
 

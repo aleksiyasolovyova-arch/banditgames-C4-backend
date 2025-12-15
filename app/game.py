@@ -423,4 +423,3 @@ class ConnectFourGame:
         game.ended_at = data.get('ended_at')
 
         return game
-
