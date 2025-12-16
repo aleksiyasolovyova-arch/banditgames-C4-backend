@@ -47,9 +47,3 @@ class GameService:
         if not game:
             raise ValueError(f"Game not found: {game_id}")
         return game
-
-    def abandon_game(self, game_id: str) -> Game:
-        game = self.get_game(game_id)
-        game.abandon()
-        self._store.save(game)
-        return game

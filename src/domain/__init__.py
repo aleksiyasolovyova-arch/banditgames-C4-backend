@@ -12,6 +12,5 @@ __all__ = [
     'Position',
     'Move',
     'Board',
-    'GameStatus',
     'Game',
 ]
