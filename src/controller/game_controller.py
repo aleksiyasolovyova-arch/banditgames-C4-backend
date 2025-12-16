@@ -2,9 +2,9 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from ..domain import Player
 from .dto.request import CreateGameRequest
-from .dto.response import GameResponse, ErrorResponse
+from .dto.response import GameResponse
+from ..domain import Player
 from ..service.game_service import GameService
 
 logger = logging.getLogger(__name__)
@@ -25,8 +25,8 @@ def get_game_service(request: Request) -> GameService:
     status_code=status.HTTP_201_CREATED
 )
 async def create_game(
-    dto: CreateGameRequest,
-    game_service: GameService = Depends(get_game_service)
+        dto: CreateGameRequest,
+        game_service: GameService = Depends(get_game_service)
 ):
     try:
         player_one = Player(
