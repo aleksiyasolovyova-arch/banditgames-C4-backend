@@ -33,7 +33,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ---------------------------------------
 # 6. Copy application code
 # ---------------------------------------
-COPY app ./app
+COPY src ./src
 
 # Create log and data directories
 RUN mkdir -p logs data
@@ -59,4 +59,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # ---------------------------------------
 # 10. Start the FastAPI server
 # ---------------------------------------
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
