@@ -6,7 +6,6 @@ Responsibilities:
 - Translate domain events to RabbitMQ messages
 - Publish immutable facts about the game
 - Never contain business logic
-
 """
 import json
 import logging
@@ -17,15 +16,15 @@ import uuid
 import pika
 from pika.exceptions import AMQPConnectionError, AMQPChannelError
 
-from domain import Game, Move
-from config import Settings
+from ..domain import Game, Move
+from ..config import Settings
 
 logger = logging.getLogger(__name__)
 
 
 class RabbitMQEventPublisher:
     """
-  implementation of EventPublisher using RabbitMQ.
+    Implementation of EventPublisher using RabbitMQ.
 
     Publishes game lifecycle events:
     - game.created
@@ -40,7 +39,6 @@ class RabbitMQEventPublisher:
         self._connection: pika.BlockingConnection | None = None
         self._channel: pika.channel.Channel | None = None
         self._setup_connection()
-
 
     # Connection management
 
@@ -104,14 +102,9 @@ class RabbitMQEventPublisher:
         except (AMQPConnectionError, AMQPChannelError) as e:
             logger.error(f"Failed to publish event {routing_key}: {e}")
 
-
     # Game events
 
     def publish_game_created(self, game: Game) -> None:
-        """
-        Publish game created event.
-
-        """
         if not game.player_one or not game.player_two:
             raise RuntimeError("Invariant violation: game created without two players")
 
@@ -131,10 +124,17 @@ class RabbitMQEventPublisher:
 
         self._publish("game.created", event)
 
-    def publish_move_made(self, game: Game, move: Move) -> None:
+    def publish_move_made(
+        self,
+        game: Game,
+        move: Move,
+        pre_state: Dict[str, Any],
+        post_state: Dict[str, Any]
+    ) -> None:
         """
-        Publish move made event.
-
+        Publish move made event with BOTH:
+        - preState: state BEFORE applying the move (ML features)
+        - postState: state AFTER applying the move (result verification)
         """
         event = {
             "eventId": str(uuid.uuid4()),
@@ -142,16 +142,13 @@ class RabbitMQEventPublisher:
             "timestamp": move.timestamp.isoformat(),
             "gameId": game.id,
             "move": move.to_dict(),
-            "gameState": game.get_state_snapshot()
+            "preState": pre_state,
+            "postState": post_state
         }
 
         self._publish("move.made", event)
 
     def publish_game_finished(self, game: Game) -> None:
-        """
-        Publish game finished event.
-
-        """
         event = {
             "eventId": str(uuid.uuid4()),
             "eventType": "game.finished",

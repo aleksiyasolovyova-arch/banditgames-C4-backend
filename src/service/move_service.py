@@ -10,8 +10,9 @@ Business layer:
 import logging
 
 from ..domain import Game, Move
-from data_access import EventPublisher
-from data_access import InMemoryGameStore
+from ..data_access import EventPublisher
+from ..data_access.in_memory_game_store import InMemoryGameStore
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,11 @@ class MoveService:
         """
         Execute a move:
         1) Load game (runtime store)
-        2) Domain enforces rules + updates state
-        3) Save updated game
-        4) Publish events
+        2) Take PRE-state snapshot (features for ML)
+        3) Domain enforces rules + updates state
+        4) Save updated game
+        5) Take POST-state snapshot
+        6) Publish move event including both states
 
         Returns:
             The executed Move
@@ -40,14 +43,20 @@ class MoveService:
         if not game:
             raise ValueError(f"Game not found: {game_id}")
 
+        # Snapshot BEFORE the move (state in which the move decision is made)
+        pre_state = game.get_state_snapshot()
+
         # Domain handles ALL validation and execution
         move = game.make_move(player_id, column)
 
         # Save updated state (runtime only)
         self._store.save(game)
 
+        # Snapshot AFTER the move
+        post_state = game.get_state_snapshot()
+
         # Publish move event for external services (AI, logging)
-        self._event_publisher.publish_move_made(game, move)
+        self._event_publisher.publish_move_made(game, move, pre_state, post_state)
 
         logger.info(f"Move executed in game {game.id}: player={player_id} column={column}")
 
@@ -57,3 +66,4 @@ class MoveService:
             logger.info(f"Game {game.id} finished with status {game.status}")
 
         return move
+

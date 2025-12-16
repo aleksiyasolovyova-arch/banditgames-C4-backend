@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional, List
 
-from domain import Game
+from ..domain import Game
 
 
 class InMemoryGameStore:

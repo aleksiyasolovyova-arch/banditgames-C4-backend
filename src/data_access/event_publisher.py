@@ -4,7 +4,7 @@ Services depend on this interface, not concrete implementation.
 """
 from typing import Protocol
 
-from domain import Game, Move
+from ..domain import Game, Move
 
 
 class EventPublisher(Protocol):
@@ -30,7 +30,7 @@ class EventPublisher(Protocol):
         """Publish game created event."""
         ...
 
-    def publish_move_made(self, game: Game, move: Move) -> None:
+    def publish_move_made(self, game: Game, move: Move, pre_state: dict, post_state: dict) -> None:
         """
         Publish move made event.
 
