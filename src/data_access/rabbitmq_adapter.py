@@ -1,16 +1,7 @@
-"""
-RabbitMQ implementation of EventPublisher.
-Concrete outbound adapter.
-
-Responsibilities:
-- Translate domain events to RabbitMQ messages
-- Publish immutable facts about the game
-- Never contain business logic
-"""
 import json
 import logging
 from datetime import datetime, UTC
-from typing import Dict, Any
+from typing import Dict, Any, List
 import uuid
 
 import pika
@@ -23,15 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 class RabbitMQEventPublisher:
-    """
-    Implementation of EventPublisher using RabbitMQ.
-
-    Publishes game lifecycle events:
-    - game.created
-    - move.made
-    - game.finished
-    """
-
     EXCHANGE = "connect4.events"
 
     def __init__(self, settings: Settings):
@@ -39,8 +21,6 @@ class RabbitMQEventPublisher:
         self._connection: pika.BlockingConnection | None = None
         self._channel: pika.channel.Channel | None = None
         self._setup_connection()
-
-    # Connection management
 
     def _setup_connection(self) -> None:
         try:
@@ -83,7 +63,6 @@ class RabbitMQEventPublisher:
     def _publish(self, routing_key: str, event: Dict[str, Any]) -> None:
         try:
             self._ensure_connection()
-
             message_body = json.dumps(event, default=str)
 
             self._channel.basic_publish(
@@ -91,7 +70,7 @@ class RabbitMQEventPublisher:
                 routing_key=routing_key,
                 body=message_body,
                 properties=pika.BasicProperties(
-                    delivery_mode=2,  # persistent
+                    delivery_mode=2,
                     content_type="application/json",
                     timestamp=int(datetime.now(UTC).timestamp())
                 )
@@ -102,8 +81,6 @@ class RabbitMQEventPublisher:
         except (AMQPConnectionError, AMQPChannelError) as e:
             logger.error(f"Failed to publish event {routing_key}: {e}")
 
-    # Game events
-
     def publish_game_created(self, game: Game) -> None:
         if not game.player_one or not game.player_two:
             raise RuntimeError("Invariant violation: game created without two players")
@@ -113,15 +90,11 @@ class RabbitMQEventPublisher:
             "eventType": "game.created",
             "timestamp": datetime.now(UTC).isoformat(),
             "gameId": game.id,
-            "board": {
-                "rows": game.board.rows,
-                "cols": game.board.cols
-            },
+            "board": {"rows": game.board.rows, "cols": game.board.cols},
             "playerOne": game.player_one.to_dict(),
             "playerTwo": game.player_two.to_dict(),
             "status": game.status.value
         }
-
         self._publish("game.created", event)
 
     def publish_move_made(
@@ -129,23 +102,19 @@ class RabbitMQEventPublisher:
         game: Game,
         move: Move,
         pre_state: Dict[str, Any],
-        post_state: Dict[str, Any]
+        post_state: Dict[str, Any],
+        legal_moves: List[int]
     ) -> None:
-        """
-        Publish move made event with BOTH:
-        - preState: state BEFORE applying the move (ML features)
-        - postState: state AFTER applying the move (result verification)
-        """
         event = {
             "eventId": str(uuid.uuid4()),
             "eventType": "move.made",
             "timestamp": move.timestamp.isoformat(),
             "gameId": game.id,
-            "move": move.to_dict(),
+            "move": move.to_dict(),      # includes thinkingTimeMs
+            "legalMoves": legal_moves,
             "preState": pre_state,
             "postState": post_state
         }
-
         self._publish("move.made", event)
 
     def publish_game_finished(self, game: Game) -> None:
@@ -159,7 +128,6 @@ class RabbitMQEventPublisher:
             "totalMoves": game.get_move_count(),
             "durationSeconds": game.get_duration_seconds()
         }
-
         self._publish("game.finished", event)
 
     def close(self) -> None:

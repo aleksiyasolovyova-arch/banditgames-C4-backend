@@ -24,6 +24,7 @@ class Move:
     token: Token
     player_id: str
     timestamp: datetime
+    thinking_time_ms: float
 
     def __str__(self) -> str:
         return f"Move #{self.move_index}: Player {self.player_id} -> Col {self.column}"
@@ -36,5 +37,6 @@ class Move:
             "landedAt": {"row": self.landed_at.row, "col": self.landed_at.col},
             "token": self.token.value,
             "playerId": self.player_id,
-            "timestamp": self.timestamp.isoformat()
+            "timestamp": self.timestamp.isoformat(),
+            "thinkingTimeMs": self.thinking_time_ms
         }

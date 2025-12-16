@@ -35,7 +35,6 @@ class Game:
         self.id = game_id or str(uuid.uuid4())
         self.board = Board(rows, cols)
 
-        # Enforce invariant: two players must exist.
         if player_one is None or player_two is None:
             raise ValueError("A game must be created with two players (player_one and player_two).")
 
@@ -48,9 +47,6 @@ class Game:
         # Game state
         self.current_token = Token.PLAYER_ONE  # Player 1 always starts
         self.status = GameStatus.IN_PROGRESS
-
-        # TODO Why do we save the winner like this if the winner information is in the game status enum?
-
         self.winner: Optional[Player] = None
 
         # Move history
@@ -61,6 +57,7 @@ class Game:
         self.updated_at = self.created_at
         self.started_at: Optional[datetime] = None
         self.finished_at: Optional[datetime] = None
+        self.turn_started_at: datetime = self.created_at
 
     # Player Management
 
@@ -80,7 +77,6 @@ class Game:
 
     def get_current_player(self) -> Player:
         player = self.get_player_for_token(self.current_token)
-        # With our invariants, this should never be None.
         if player is None:
             raise RuntimeError("Invariant broken: current player is missing.")
         return player
@@ -88,10 +84,6 @@ class Game:
     # Game Actions
 
     def make_move(self, player_id: str, column: int) -> Move:
-        """
-        Execute a move in the game.
-        Domain validates everything and updates game state.
-        """
         if self.status != GameStatus.IN_PROGRESS:
             raise ValueError(f"Game is not in progress (status: {self.status})")
 
@@ -106,22 +98,27 @@ class Game:
         if not self.board.is_column_available(column):
             raise ValueError(f"Column {column} is not available")
 
+        now = datetime.now(UTC)
+
         # Mark start time on first valid move
         if self.started_at is None:
-            self.started_at = datetime.now(UTC)
+            self.started_at = now
+        thinking_time_ms = (now - self.turn_started_at).total_seconds() * 1000.0
+        if thinking_time_ms < 0:
+            thinking_time_ms = 0.0  # defensive (clock issues)
 
-        # Execute move (functional style - returns new board)
+        # Execute move
         new_board, landing_position = self.board.drop_piece(column, token)
         self.board = new_board
 
-        # Record the move
         move = Move(
             move_index=len(self.moves),
             column=column,
             landed_at=landing_position,
             token=token,
             player_id=player_id,
-            timestamp=datetime.now(UTC)
+            timestamp=now,
+            thinking_time_ms=thinking_time_ms
         )
         self.moves.append(move)
 
@@ -131,14 +128,16 @@ class Game:
         # Switch turns if game continues
         if self.status == GameStatus.IN_PROGRESS:
             self.current_token = self.current_token.opposite()
+            self.turn_started_at = now
 
-        self.updated_at = datetime.now(UTC)
+        self.updated_at = now
         return move
 
     def abandon(self) -> None:
         if self.status.is_finished:
             raise ValueError("Cannot abandon a finished game")
 
+        self.winner = None
         self.status = GameStatus.ABANDONED
         self.finished_at = datetime.now(UTC)
         self.updated_at = self.finished_at
@@ -166,7 +165,11 @@ class Game:
         token = self.get_token_for_player(player_id)
         return token == self.current_token if token else False
 
-    # Internal - Game End Detection
+    @property
+    def phase(self) -> str:
+        if self.started_at is None:
+            return "NOT_STARTED"
+        return "FINISHED" if self.status.is_finished else "IN_PROGRESS"
 
     def _check_game_end(self) -> None:
         winning_token = self.board.check_winner()
@@ -189,10 +192,9 @@ class Game:
         self.finished_at = datetime.now(UTC)
 
     def _end_game_with_draw(self) -> None:
+        self.winner = None
         self.status = GameStatus.DRAW
         self.finished_at = datetime.now(UTC)
-
-    # Serialization
 
     def to_dict(self) -> dict:
         return {
@@ -211,7 +213,8 @@ class Game:
             "updatedAt": self.updated_at.isoformat(),
             "startedAt": self.started_at.isoformat() if self.started_at else None,
             "finishedAt": self.finished_at.isoformat() if self.finished_at else None,
-            "durationSeconds": self.get_duration_seconds()
+            "durationSeconds": self.get_duration_seconds(),
+            "phase": self.phase
         }
 
     def get_state_snapshot(self) -> dict:
