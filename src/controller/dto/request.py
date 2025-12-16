@@ -4,7 +4,6 @@ Request Data Transfer Objects.
 from pydantic import BaseModel, Field
 
 
-
 class PlayerRequest(BaseModel):
     id: str
     name: str

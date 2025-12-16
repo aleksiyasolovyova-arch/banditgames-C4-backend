@@ -11,7 +11,6 @@ from .board import Board
 from .player import Player
 from .token import Token
 from .move import Move
-from .game_status import GameStatus
 
 
 class Game:
@@ -46,7 +45,6 @@ class Game:
 
         # Game state
         self.current_token = Token.PLAYER_ONE  # Player 1 always starts
-        self.status = GameStatus.IN_PROGRESS
         self.winner: Optional[Player] = None
 
         # Move history
@@ -84,8 +82,8 @@ class Game:
     # Game Actions
 
     def make_move(self, player_id: str, column: int) -> Move:
-        if self.status != GameStatus.IN_PROGRESS:
-            raise ValueError(f"Game is not in progress (status: {self.status})")
+        if self.phase == "FINISHED":
+            raise ValueError("Game is already finished")
 
         token = self.get_token_for_player(player_id)
         if token is None:
@@ -126,26 +124,17 @@ class Game:
         self._check_game_end()
 
         # Switch turns if game continues
-        if self.status == GameStatus.IN_PROGRESS:
+        if self.phase == "IN_PROGRESS":
             self.current_token = self.current_token.opposite()
             self.turn_started_at = now
 
         self.updated_at = now
         return move
 
-    def abandon(self) -> None:
-        if self.status.is_finished:
-            raise ValueError("Cannot abandon a finished game")
-
-        self.winner = None
-        self.status = GameStatus.ABANDONED
-        self.finished_at = datetime.now(UTC)
-        self.updated_at = self.finished_at
-
     # Game State Queries
 
     def get_available_columns(self) -> List[int]:
-        if self.status != GameStatus.IN_PROGRESS:
+        if self.phase != "IN_PROGRESS":
             return []
         return self.board.get_available_columns()
 
@@ -169,7 +158,9 @@ class Game:
     def phase(self) -> str:
         if self.started_at is None:
             return "NOT_STARTED"
-        return "FINISHED" if self.status.is_finished else "IN_PROGRESS"
+        if self.started_at is not None and self.finished_at is None:
+            return "IN_PROGRESS"
+        return "FINISHED"
 
     def _check_game_end(self) -> None:
         winning_token = self.board.check_winner()
@@ -183,17 +174,10 @@ class Game:
 
     def _end_game_with_winner(self, winning_token: Token) -> None:
         self.winner = self.get_player_for_token(winning_token)
-
-        if winning_token == Token.PLAYER_ONE:
-            self.status = GameStatus.PLAYER_ONE_WIN
-        else:
-            self.status = GameStatus.PLAYER_TWO_WIN
-
         self.finished_at = datetime.now(UTC)
 
     def _end_game_with_draw(self) -> None:
         self.winner = None
-        self.status = GameStatus.DRAW
         self.finished_at = datetime.now(UTC)
 
     def to_dict(self) -> dict:
@@ -204,7 +188,6 @@ class Game:
             "playerTwo": self.player_two.to_dict(),
             "currentToken": self.current_token.value,
             "currentPlayer": self.get_current_player().to_dict(),
-            "status": self.status.value,
             "winner": self.winner.to_dict() if self.winner else None,
             "moveCount": self.get_move_count(),
             "lastMove": self.get_last_move().to_dict() if self.get_last_move() else None,
@@ -224,7 +207,7 @@ class Game:
             "currentToken": self.current_token.value,
             "moveIndex": self.get_move_count(),
             "availableColumns": self.get_available_columns(),
-            "status": self.status.value,
+            "phase": self.phase,
             "playerOneId": self.player_one.id,
             "playerTwoId": self.player_two.id,
             "lastMove": self.get_last_move().to_dict() if self.get_last_move() else None,
@@ -232,4 +215,4 @@ class Game:
         }
 
     def __str__(self) -> str:
-        return f"Game {self.id[:8]}: {self.player_one.name} vs {self.player_two.name} - {self.status.value}"
+        return f"Game {self.id[:8]}: {self.player_one.name} vs {self.player_two.name} - {self.phase}"

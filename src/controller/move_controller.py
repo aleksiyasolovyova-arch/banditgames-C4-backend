@@ -43,10 +43,10 @@ def get_move_service(request: Request) -> MoveService:
     }
 )
 async def make_move(
-    game_id: str,
-    request_dto: MakeMoveRequest,
-    game_service: GameService = Depends(get_game_service),
-    move_service: MoveService = Depends(get_move_service)
+        game_id: str,
+        request_dto: MakeMoveRequest,
+        game_service: GameService = Depends(get_game_service),
+        move_service: MoveService = Depends(get_move_service)
 ):
     try:
         # Execute move

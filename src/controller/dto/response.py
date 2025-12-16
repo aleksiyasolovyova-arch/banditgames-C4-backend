@@ -4,8 +4,10 @@ Presentation layer models.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
+
+from pydantic import BaseModel, Field
+
 from ...domain import Game
 
 
