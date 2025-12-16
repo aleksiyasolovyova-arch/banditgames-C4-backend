@@ -5,6 +5,7 @@ Centralized config.
 from pydantic import BaseSettings
 from typing import List
 
+# TODO Make passwords and other variables take from environment variables and update the orchestration project
 
 class Settings(BaseSettings):
     # App metadata (main.py uses these)

@@ -17,8 +17,8 @@ import uuid
 import pika
 from pika.exceptions import AMQPConnectionError, AMQPChannelError
 
-from ..domain import Game, Move
-from ..config import Settings
+from domain import Game, Move
+from config import Settings
 
 logger = logging.getLogger(__name__)
 

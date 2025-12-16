@@ -4,7 +4,7 @@ Services depend on this interface, not concrete implementation.
 """
 from typing import Protocol
 
-from ..domain import Game, Move
+from domain import Game, Move
 
 
 class EventPublisher(Protocol):

@@ -48,6 +48,9 @@ class Game:
         # Game state
         self.current_token = Token.PLAYER_ONE  # Player 1 always starts
         self.status = GameStatus.IN_PROGRESS
+
+        # TODO Why do we save the winner like this if the winner information is in the game status enum?
+
         self.winner: Optional[Player] = None
 
         # Move history

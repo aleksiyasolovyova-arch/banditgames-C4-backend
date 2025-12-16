@@ -10,8 +10,8 @@ Business layer:
 import logging
 
 from ..domain import Game, Move
-from ..adapter.event_publisher import EventPublisher
-from ..adapter.in_memory_game_store import InMemoryGameStore
+from data_access import EventPublisher
+from data_access import InMemoryGameStore
 
 logger = logging.getLogger(__name__)
 

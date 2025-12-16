@@ -18,6 +18,7 @@ class Player:
     by AI is determined by external services, not stored here.
     """
     id: str
+    # TODO do we need name for the front end or?
     name: str
 
     def __str__(self) -> str:

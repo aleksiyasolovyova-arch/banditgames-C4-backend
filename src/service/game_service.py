@@ -2,8 +2,8 @@ import logging
 import uuid
 
 from ..domain import Game, Player
-from ..adapter.event_publisher import EventPublisher
-from ..adapter.in_memory_game_store import InMemoryGameStore
+from data_access import EventPublisher
+from data_access import InMemoryGameStore
 
 logger = logging.getLogger(__name__)
 

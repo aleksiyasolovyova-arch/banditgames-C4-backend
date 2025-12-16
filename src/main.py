@@ -11,8 +11,8 @@ from fastapi.responses import JSONResponse
 
 from config import settings
 
-from adapter.rabbitmq_adapter import RabbitMQEventPublisher
-from adapter.in_memory_game_store import InMemoryGameStore
+from data_access import RabbitMQEventPublisher
+from data_access import InMemoryGameStore
 
 from service.game_service import GameService
 from service.move_service import MoveService
