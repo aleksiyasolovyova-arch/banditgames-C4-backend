@@ -26,6 +26,7 @@ class MoveResponse(BaseModel):
     token: str
     player_id: str = Field(..., alias="playerId")
     timestamp: str
+    thinking_time_ms: float = Field(..., alias="thinkingTimeMs")
 
     class Config:
         populate_by_name = True
@@ -48,7 +49,7 @@ class GameResponse(BaseModel):
     player_two: Optional[PlayerResponse] = Field(None, alias="playerTwo")
     current_token: str = Field(..., alias="currentToken")
     current_player: Optional[PlayerResponse] = Field(None, alias="currentPlayer")
-    status: str
+    phase: str
     winner: Optional[PlayerResponse] = None
     move_count: int = Field(..., alias="moveCount")
     last_move: Optional[MoveResponse] = Field(None, alias="lastMove")

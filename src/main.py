@@ -9,16 +9,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from config import settings
+from src.config import settings
 
-from data_access import RabbitMQEventPublisher
-from data_access import InMemoryGameStore
+from src.data_access.database import DatabaseConfig
+from src.data_access.postgres_game_repository import PostgresGameRepository
+from src.data_access import RabbitMQEventPublisher
 
-from service.game_service import GameService
-from service.move_service import MoveService
+from src.service.game_service import GameService
+from src.service.move_service import MoveService
 
-from controller.game_controller import router as game_router
-from controller.move_controller import router as move_router
+from src.controller.game_controller import router as game_router
+from src.controller.move_controller import router as move_router
 
 # Logging Setup
 logging.basicConfig(
@@ -32,20 +33,23 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
-    Initializes infrastructure + services and stores them in app.state.
+    Initializes database, infrastructure, and services.
     """
     logger.info("Starting Connect Four API...")
 
     try:
+        # Test database connection
+        if not DatabaseConfig.test_connection():
+            raise RuntimeError("Database connection failed")
+
+        logger.info("Database connection established")
+
         # Infrastructure
-        store = InMemoryGameStore()
         publisher = RabbitMQEventPublisher(settings)
 
-        # Services (stateless, use store)
-        app.state.game_store = store
+        # Store references for dependency injection
+        app.state.db_config = DatabaseConfig
         app.state.event_publisher = publisher
-        app.state.game_service = GameService(store, publisher)
-        app.state.move_service = MoveService(store, publisher)
 
         logger.info("Services initialized")
         logger.info(f"{settings.app_name} v{settings.app_version} started successfully")
@@ -59,10 +63,16 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Connect Four API...")
 
     try:
+        # Close RabbitMQ
         pub = getattr(app.state, "event_publisher", None)
         if pub:
             pub.close()
             logger.info("RabbitMQ connection closed")
+
+        # Close database
+        DatabaseConfig.close_engine()
+        logger.info("Database connection closed")
+
     except Exception as e:
         logger.error(f"Error during shutdown: {e}", exc_info=True)
 
@@ -106,19 +116,22 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.get("/health", tags=["health"])
 async def health_check(request: Request):
     publisher = getattr(request.app.state, "event_publisher", None)
-    connected = bool(getattr(publisher, "_connection", None)) if publisher else False
+    rabbitmq_connected = bool(getattr(publisher, "_connection", None)) if publisher else False
+
+    db_connected = DatabaseConfig.test_connection()
 
     return {
-        "status": "healthy",
+        "status": "healthy" if (db_connected and rabbitmq_connected) else "degraded",
         "service": settings.app_name,
         "version": settings.app_version,
-        "rabbitmq": "connected" if connected else "disconnected"
+        "database": "connected" if db_connected else "disconnected",
+        "rabbitmq": "connected" if rabbitmq_connected else "disconnected"
     }
 
 
 # Routes
-app.include_router(game_router, prefix=settings.api_prefix)
-app.include_router(move_router, prefix=settings.api_prefix)
+app.include_router(game_router)
+app.include_router(move_router)
 
 
 if __name__ == "__main__":

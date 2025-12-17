@@ -1,3 +1,9 @@
+"""
+RabbitMQ Event Publisher Implementation.
+Publishes domain events to RabbitMQ exchange.
+
+Location: src/data_access/rabbitmq_adapter.py
+"""
 import json
 import logging
 from datetime import datetime, UTC
@@ -93,24 +99,24 @@ class RabbitMQEventPublisher:
             "board": {"rows": game.board.rows, "cols": game.board.cols},
             "playerOne": game.player_one.to_dict(),
             "playerTwo": game.player_two.to_dict(),
-            "status": game.status.value
+            "phase": game.phase
         }
         self._publish("game.created", event)
 
     def publish_move_made(
-        self,
-        game: Game,
-        move: Move,
-        pre_state: Dict[str, Any],
-        post_state: Dict[str, Any],
-        legal_moves: List[int]
+            self,
+            game: Game,
+            move: Move,
+            pre_state: Dict[str, Any],
+            post_state: Dict[str, Any],
+            legal_moves: List[int]
     ) -> None:
         event = {
             "eventId": str(uuid.uuid4()),
             "eventType": "move.made",
             "timestamp": move.timestamp.isoformat(),
             "gameId": game.id,
-            "move": move.to_dict(),      # includes thinkingTimeMs
+            "move": move.to_dict(),  # includes thinkingTimeMs
             "legalMoves": legal_moves,
             "preState": pre_state,
             "postState": post_state
@@ -123,12 +129,39 @@ class RabbitMQEventPublisher:
             "eventType": "game.finished",
             "timestamp": datetime.now(UTC).isoformat(),
             "gameId": game.id,
-            "status": game.status.value,
+            "phase": game.phase,
             "winner": game.winner.to_dict() if game.winner else None,
             "totalMoves": game.get_move_count(),
             "durationSeconds": game.get_duration_seconds()
         }
         self._publish("game.finished", event)
+
+    def publish_achievement_unlocked(self, event_data: Dict[str, Any]) -> None:
+        """
+        Publish achievement unlocked event.
+
+        Args:
+            event_data: Dictionary containing:
+                - playerId: Player who unlocked achievement
+                - achievementType: Type of achievement
+                - title: Achievement title
+                - description: Achievement description
+        """
+        event = {
+            "eventId": str(uuid.uuid4()),
+            "eventType": "achievement.unlocked",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "playerId": event_data["playerId"],
+            "achievementType": event_data["achievementType"],
+            "title": event_data["title"],
+            "description": event_data["description"],
+        }
+        self._publish("achievement.unlocked", event)
+
+        logger.info(
+            f"Published achievement.unlocked event for player {event_data['playerId']}: "
+            f"{event_data['achievementType']}"
+        )
 
     def close(self) -> None:
         if self._connection and not self._connection.is_closed:

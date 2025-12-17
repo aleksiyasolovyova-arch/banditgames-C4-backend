@@ -3,7 +3,7 @@ import uuid
 
 from ..domain import Game, Player
 from ..data_access import EventPublisher
-from ..data_access import InMemoryGameStore
+from ..data_access.game_repository import GameRepository
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +13,8 @@ class GameService:
     Stateless business service orchestrating game lifecycle.
     """
 
-    def __init__(self, store: InMemoryGameStore, event_publisher: EventPublisher):
-        self._store = store
+    def __init__(self, repository: GameRepository, event_publisher: EventPublisher):
+        self._repository = repository
         self._event_publisher = event_publisher
 
     def create_game(
@@ -32,7 +32,7 @@ class GameService:
             player_two=player_two
         )
 
-        self._store.save(game)
+        self._repository.save(game)
         self._event_publisher.publish_game_created(game)
 
         logger.info(
@@ -43,7 +43,7 @@ class GameService:
         return game
 
     def get_game(self, game_id: str) -> Game:
-        game = self._store.get(game_id)
+        game = self._repository.get(game_id)
         if not game:
             raise ValueError(f"Game not found: {game_id}")
         return game
