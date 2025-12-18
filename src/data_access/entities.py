@@ -15,6 +15,54 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+class PlayerEntity(Base):
+    """
+    ORM entity for players table.
+    Represents player information in the database.
+    """
+    __tablename__ = "players"
+    __table_args__ = (
+        Index("idx_players_created_at", "created_at"),
+        Index("idx_players_name", "name"),
+        {"schema": "connect4_backend"}
+    )
+
+    # Primary key
+    player_id = Column(UUID(as_uuid=True), primary_key=True, name="player_id")
+
+    # Player information
+    name = Column(String(255), nullable=False)
+
+    # Timestamps
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
+
+    # Relationships
+    games_as_player_one = relationship(
+        "GameEntity",
+        foreign_keys="GameEntity.player_one_id",
+        back_populates="player_one_entity"
+    )
+    games_as_player_two = relationship(
+        "GameEntity",
+        foreign_keys="GameEntity.player_two_id",
+        back_populates="player_two_entity"
+    )
+    moves = relationship(
+        "MoveEntity",
+        back_populates="player_entity",
+        cascade="all, delete-orphan"
+    )
+    achievements = relationship(
+        "AchievementUnlockedEntity",
+        back_populates="player_entity",
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<PlayerEntity(player_id={self.player_id}, name={self.name})>"
+
+
 class GameEntity(Base):
     """
     ORM entity for games table.
@@ -46,7 +94,7 @@ class GameEntity(Base):
     )
 
     # Primary key
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    game_id = Column(UUID(as_uuid=True), primary_key=True, name="game_id")
 
     # Board configuration
     rows = Column(Integer, nullable=False)
@@ -55,10 +103,10 @@ class GameEntity(Base):
     # Board state (stored as JSONB 2D array)
     grid = Column(JSONB, nullable=False)
 
-    # Players
-    player_one_id = Column(String(255), nullable=False)
+    # Players (foreign keys to players table)
+    player_one_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.players.player_id", ondelete="RESTRICT"), nullable=False)
     player_one_name = Column(String(255), nullable=False)
-    player_two_id = Column(String(255), nullable=False)
+    player_two_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.players.player_id", ondelete="RESTRICT"), nullable=False)
     player_two_name = Column(String(255), nullable=False)
 
     # Game state
@@ -66,7 +114,7 @@ class GameEntity(Base):
     phase = Column(String(20), nullable=False)
 
     # Winner (nullable)
-    winner_id = Column(String(255), nullable=True)
+    winner_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.players.player_id", ondelete="RESTRICT"), nullable=True)
     winner_name = Column(String(255), nullable=True)
 
     # Timestamps
@@ -77,15 +125,30 @@ class GameEntity(Base):
     turn_started_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
     # Relationships
+    player_one_entity = relationship(
+        "PlayerEntity",
+        foreign_keys=[player_one_id],
+        back_populates="games_as_player_one"
+    )
+    player_two_entity = relationship(
+        "PlayerEntity",
+        foreign_keys=[player_two_id],
+        back_populates="games_as_player_two"
+    )
     moves = relationship(
         "MoveEntity",
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="MoveEntity.move_index"
     )
+    achievements = relationship(
+        "AchievementUnlockedEntity",
+        back_populates="game_entity",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
-        return f"<GameEntity(id={self.id}, phase={self.phase})>"
+        return f"<GameEntity(game_id={self.game_id}, phase={self.phase})>"
 
 
 class MoveEntity(Base):
@@ -105,14 +168,15 @@ class MoveEntity(Base):
         Index("idx_moves_game_id", "game_id"),
         Index("idx_moves_game_move_index", "game_id", "move_index"),
         Index("idx_moves_timestamp", "timestamp"),
+        Index("idx_moves_player_id", "player_id"),
         {"schema": "connect4_backend"}
     )
 
     # Primary key
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    move_id = Column(UUID(as_uuid=True), primary_key=True, name="move_id")
 
     # Foreign key to game
-    game_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.games.id", ondelete="CASCADE"), nullable=False)
+    game_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.games.game_id", ondelete="CASCADE"), nullable=False)
 
     # Move details
     move_index = Column(Integer, nullable=False)
@@ -125,8 +189,8 @@ class MoveEntity(Base):
     # Token placed
     token = Column(String(1), nullable=False)
 
-    # Player
-    player_id = Column(String(255), nullable=False)
+    # Player (foreign key to players table)
+    player_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.players.player_id", ondelete="RESTRICT"), nullable=False)
 
     # Timing
     timestamp = Column(TIMESTAMP(timezone=True), nullable=False)
@@ -134,6 +198,46 @@ class MoveEntity(Base):
 
     # Relationships
     game = relationship("GameEntity", back_populates="moves")
+    player_entity = relationship("PlayerEntity", back_populates="moves")
 
     def __repr__(self) -> str:
-        return f"<MoveEntity(id={self.id}, game_id={self.game_id}, move_index={self.move_index})>"
+        return f"<MoveEntity(move_id={self.move_id}, game_id={self.game_id}, move_index={self.move_index})>"
+
+
+class AchievementUnlockedEntity(Base):
+    """
+    ORM entity for achievement_unlocked table.
+    Represents achievements unlocked by players.
+    Prevents duplicate achievement unlocks via unique constraint.
+    """
+    __tablename__ = "achievement_unlocked"
+    __table_args__ = (
+        UniqueConstraint("player_id", "achievement_type", name="uq_player_achievement"),
+        Index("idx_achievement_unlocked_player", "player_id"),
+        Index("idx_achievement_unlocked_type", "achievement_type"),
+        Index("idx_achievement_unlocked_game", "game_id"),
+        Index("idx_achievement_unlocked_at", "unlocked_at"),
+        {"schema": "connect4_backend"}
+    )
+
+    # Primary key
+    achievement_id = Column(UUID(as_uuid=True), primary_key=True, name="achievement_id")
+
+    # Player who unlocked the achievement
+    player_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.players.player_id", ondelete="CASCADE"), nullable=False)
+
+    # Achievement type
+    achievement_type = Column(String(64), nullable=False)
+
+    # When the achievement was unlocked
+    unlocked_at = Column(TIMESTAMP(timezone=True), nullable=False)
+
+    # Optional: which game caused the unlock
+    game_id = Column(UUID(as_uuid=True), ForeignKey("connect4_backend.games.game_id", ondelete="SET NULL"), nullable=True)
+
+    # Relationships
+    player_entity = relationship("PlayerEntity", back_populates="achievements")
+    game_entity = relationship("GameEntity", back_populates="achievements")
+
+    def __repr__(self) -> str:
+        return f"<AchievementUnlockedEntity(achievement_id={self.achievement_id}, player_id={self.player_id}, achievement_type={self.achievement_type})>"

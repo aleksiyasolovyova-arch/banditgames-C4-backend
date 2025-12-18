@@ -1,8 +1,7 @@
 """
-Move Controller - REST API endpoints for making moves.
-Updated to include achievement checking dependencies.
+Move Controller - REST API endpoints for making moves
+ includes achievement checking dependencies with database integration.
 
-Location: src/controller/move_controller.py
 """
 import logging
 
@@ -53,15 +52,15 @@ def get_move_service(
     request: Request,
     session: Session = Depends(get_db_session)
 ) -> MoveService:
-    """Dependency to get MoveService with achievement checking."""
+    """Dependency to get MoveService with achievement checking and database integration."""
     repository = PostgresGameRepository(session)
     event_publisher = getattr(request.app.state, "event_publisher", None)
     if not event_publisher:
         raise RuntimeError("EventPublisher not initialized")
 
-    # Create statistics calculator and achievement checker
+    # Create statistics calculator and achievement checker with repository
     stats_calculator = PlayerStatisticsCalculator(repository)
-    achievement_checker = AchievementChecker(event_publisher)
+    achievement_checker = AchievementChecker(event_publisher, repository)
 
     return MoveService(repository, event_publisher, stats_calculator, achievement_checker)
 

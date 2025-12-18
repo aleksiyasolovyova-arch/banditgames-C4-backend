@@ -2,8 +2,8 @@
 Move Service with Real-Time Achievement Checking.
 Checks achievements AFTER EVERY MOVE, not just when games finish.
 
-- No storage of unlocked achievements.
-- Achievement rules are edge-triggered to fire only once.
+- Integrates with database to prevent duplicate achievement unlocks
+- Achievement rules are edge-triggered to fire only once
 """
 import logging
 from typing import Any, Dict, List
@@ -84,6 +84,7 @@ class MoveService:
         """
         Check achievements for a player in real-time.
         Includes both lifetime stats and current game state.
+        Passes game_id to achievement checker for database recording.
         """
         try:
             statistics = self._stats_calculator.calculate_statistics(
@@ -91,15 +92,16 @@ class MoveService:
                 current_game=current_game
             )
 
-            #  no 'already unlocked' set; rules must be edge-triggered
+            # Check achievements with database integration to prevent duplicates
             newly_unlocked = self._achievement_checker.check_achievements(
                 player_id=player_id,
-                statistics=statistics
+                statistics=statistics,
+                game_id=current_game.id  # Pass game_id for achievement tracking
             )
 
             if newly_unlocked:
                 logger.info(
-                    f"Player {player_id} unlocked {len(newly_unlocked)} achievements: "
+                    f"Player {player_id} unlocked {len(newly_unlocked)} new achievements: "
                     f"{[a.value for a in newly_unlocked]}"
                 )
 
@@ -109,5 +111,4 @@ class MoveService:
                 f"Failed to check achievements for player {player_id}: {e}",
                 exc_info=True
             )
-
 
