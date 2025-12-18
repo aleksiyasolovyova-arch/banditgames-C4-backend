@@ -1,9 +1,16 @@
-from data_access.event_publisher import EventPublisher
-from data_access.rabbitmq_adapter import RabbitMQEventPublisher
-from data_access.in_memory_game_store import  InMemoryGameStore
+"""
+Data access layer - Infrastructure adapters and ports.
+"""
+from .event_publisher import EventPublisher
+from .rabbitmq_adapter import RabbitMQEventPublisher
+from .game_repository import GameRepository
+from .postgres_game_repository import PostgresGameRepository
+from .database import DatabaseConfig
 
 __all__ = [
-    'EventPublisher',
-    'RabbitMQEventPublisher',
-    'InMemoryGameStore'
+    "EventPublisher",
+    "RabbitMQEventPublisher",
+    "GameRepository",
+    "PostgresGameRepository",
+    "DatabaseConfig",
 ]

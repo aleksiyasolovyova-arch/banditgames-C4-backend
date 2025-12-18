@@ -1,7 +1,8 @@
 """
 Event Publisher interface following Dependency Inversion Principle.
-
 Services depend on this interface, not concrete implementations.
+
+Location: src/data_access/event_publisher.py
 """
 from typing import Protocol, Dict, Any, List
 
@@ -17,12 +18,13 @@ class EventPublisher(Protocol):
     - Low-level modules (RabbitMQ adapter) implement this interface
 
     The game backend publishes domain events.
-    External services (AI, logging, analytics) subscribe to these events.
+    External services (AI, logging, analytics, achievements) subscribe to these events.
 
     Event set:
     1. game.created   - Game exists
     2. move.made     - Move happened
     3. game.finished - Game ended
+    4. achievement.unlocked - Achievement unlocked
     """
 
     def publish_game_created(self, game: Game) -> None:
@@ -54,6 +56,19 @@ class EventPublisher(Protocol):
 
     def publish_game_finished(self, game: Game) -> None:
         """Publish game finished event."""
+        ...
+
+    def publish_achievement_unlocked(self, event_data: Dict[str, Any]) -> None:
+        """
+        Publish achievement unlocked event.
+
+        Args:
+            event_data: Achievement data including:
+                - playerId: Player who unlocked achievement
+                - achievementType: Type of achievement (enum value)
+                - title: Achievement display title
+                - description: Achievement description
+        """
         ...
 
     def close(self) -> None:

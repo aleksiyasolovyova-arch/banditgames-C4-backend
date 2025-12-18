@@ -1,35 +1,68 @@
 """
-Move Controller - REST API endpoints for making moves.
-- Stateless
-- Validates input with Pydantic DTOs
-- Delegates move execution to MoveService
+Move Controller - REST API endpoints for making moves
+ includes achievement checking dependencies with database integration.
+
 """
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
 
 from .dto.request import MakeMoveRequest
 from .dto.response import GameResponse, ErrorResponse
 from ..service.game_service import GameService
 from ..service.move_service import MoveService
+from ..service.player_statistics_calculator import PlayerStatisticsCalculator
+from ..service.achievement_checker import AchievementChecker
+from ..data_access.database import DatabaseConfig
+from ..data_access.postgres_game_repository import PostgresGameRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/games", tags=["moves"])
 
 
-def get_game_service(request: Request) -> GameService:
-    svc = getattr(request.app.state, "game_service", None)
-    if svc is None:
-        raise RuntimeError("GameService not initialized")
-    return svc
+def get_db_session() -> Session:
+    """Dependency to get database session."""
+    session_factory = DatabaseConfig.get_session_factory()
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
-def get_move_service(request: Request) -> MoveService:
-    svc = getattr(request.app.state, "move_service", None)
-    if svc is None:
-        raise RuntimeError("MoveService not initialized")
-    return svc
+def get_game_service(
+    request: Request,
+    session: Session = Depends(get_db_session)
+) -> GameService:
+    """Dependency to get GameService with PostgreSQL repository."""
+    repository = PostgresGameRepository(session)
+    event_publisher = getattr(request.app.state, "event_publisher", None)
+    if not event_publisher:
+        raise RuntimeError("EventPublisher not initialized")
+    return GameService(repository, event_publisher)
+
+
+def get_move_service(
+    request: Request,
+    session: Session = Depends(get_db_session)
+) -> MoveService:
+    """Dependency to get MoveService with achievement checking and database integration."""
+    repository = PostgresGameRepository(session)
+    event_publisher = getattr(request.app.state, "event_publisher", None)
+    if not event_publisher:
+        raise RuntimeError("EventPublisher not initialized")
+
+    # Create statistics calculator and achievement checker with repository
+    stats_calculator = PlayerStatisticsCalculator(repository)
+    achievement_checker = AchievementChecker(event_publisher, repository)
+
+    return MoveService(repository, event_publisher, stats_calculator, achievement_checker)
 
 
 @router.post(
@@ -49,7 +82,7 @@ async def make_move(
         move_service: MoveService = Depends(get_move_service)
 ):
     try:
-        # Execute move
+        # Execute move (includes achievement checking if game finishes)
         move_service.execute_move(
             game_id=game_id,
             player_id=request_dto.player_id,
