@@ -67,3 +67,33 @@ async def create_game(
     except Exception as e:
         logger.error("Unexpected error creating game", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/{game_id}",
+    response_model=GameResponse,
+    status_code=status.HTTP_200_OK
+)
+async def get_game(
+        game_id: str,
+        game_service: GameService = Depends(get_game_service)
+):
+    """
+    Get game by ID.
+
+    Returns the current state of the game including:
+    - Board state
+    - Current player
+    - Move history
+    - Game phase (IN_PROGRESS, FINISHED)
+    - Winner (if game is finished)
+    """
+    try:
+        game = game_service.get_game(game_id)
+        return GameResponse.from_domain(game)
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error getting game {game_id}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")

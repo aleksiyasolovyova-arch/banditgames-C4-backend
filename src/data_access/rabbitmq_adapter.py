@@ -116,6 +116,7 @@ class RabbitMQEventPublisher:
             "eventType": "move.made",
             "timestamp": move.timestamp.isoformat(),
             "gameId": game.id,
+            "nextPlayerId": game.get_current_player().id,
             "move": move.to_dict(),  # includes thinkingTimeMs
             "legalMoves": legal_moves,
             "preState": pre_state,
