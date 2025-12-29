@@ -6,6 +6,7 @@ Location: src/data_access/rabbitmq_adapter.py
 """
 import json
 import logging
+import time
 from datetime import datetime, UTC
 from typing import Dict, Any, List
 import uuid
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 class RabbitMQEventPublisher:
     EXCHANGE = "connect4.events"
+    MAX_RETRIES = 10
+    INITIAL_RETRY_DELAY = 1  # seconds
+    MAX_RETRY_DELAY = 30  # seconds
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -29,37 +33,70 @@ class RabbitMQEventPublisher:
         self._setup_connection()
 
     def _setup_connection(self) -> None:
-        try:
-            credentials = pika.PlainCredentials(
-                self.settings.rabbitmq_user,
-                self.settings.rabbitmq_password
-            )
+        """
+        Establish connection to RabbitMQ with retry logic.
+        Uses exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s...
+        """
+        retry_count = 0
+        retry_delay = self.INITIAL_RETRY_DELAY
 
-            parameters = pika.ConnectionParameters(
-                host=self.settings.rabbitmq_host,
-                port=self.settings.rabbitmq_port,
-                credentials=credentials,
-                heartbeat=600,
-                blocked_connection_timeout=300
-            )
+        while retry_count < self.MAX_RETRIES:
+            try:
+                credentials = pika.PlainCredentials(
+                    self.settings.rabbitmq_user,
+                    self.settings.rabbitmq_password
+                )
 
-            self._connection = pika.BlockingConnection(parameters)
-            self._channel = self._connection.channel()
+                parameters = pika.ConnectionParameters(
+                    host=self.settings.rabbitmq_host,
+                    port=self.settings.rabbitmq_port,
+                    credentials=credentials,
+                    heartbeat=600,
+                    blocked_connection_timeout=300,
+                    connection_attempts=3,
+                    retry_delay=2
+                )
 
-            self._channel.exchange_declare(
-                exchange=self.EXCHANGE,
-                exchange_type="topic",
-                durable=True
-            )
+                logger.info(
+                    f"Attempting to connect to RabbitMQ at "
+                    f"{self.settings.rabbitmq_host}:{self.settings.rabbitmq_port} "
+                    f"(attempt {retry_count + 1}/{self.MAX_RETRIES})"
+                )
 
-            logger.info(
-                f"Connected to RabbitMQ at "
-                f"{self.settings.rabbitmq_host}:{self.settings.rabbitmq_port}"
-            )
+                self._connection = pika.BlockingConnection(parameters)
+                self._channel = self._connection.channel()
 
-        except AMQPConnectionError as e:
-            logger.error(f"Failed to connect to RabbitMQ: {e}")
-            raise
+                self._channel.exchange_declare(
+                    exchange=self.EXCHANGE,
+                    exchange_type="topic",
+                    durable=True
+                )
+
+                logger.info(
+                    f"✅ Successfully connected to RabbitMQ at "
+                    f"{self.settings.rabbitmq_host}:{self.settings.rabbitmq_port}"
+                )
+                return  # Success!
+
+            except AMQPConnectionError as e:
+                retry_count += 1
+
+                if retry_count >= self.MAX_RETRIES:
+                    logger.error(
+                        f"❌ Failed to connect to RabbitMQ after {self.MAX_RETRIES} attempts. "
+                        f"Last error: {e}"
+                    )
+                    raise
+
+                logger.warning(
+                    f"⚠️ Failed to connect to RabbitMQ (attempt {retry_count}/{self.MAX_RETRIES}): {e}. "
+                    f"Retrying in {retry_delay} seconds..."
+                )
+
+                time.sleep(retry_delay)
+
+                # Exponential backoff with cap
+                retry_delay = min(retry_delay * 2, self.MAX_RETRY_DELAY)
 
     def _ensure_connection(self) -> None:
         if not self._connection or self._connection.is_closed:
