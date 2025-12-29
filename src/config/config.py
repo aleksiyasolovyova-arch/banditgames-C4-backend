@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     postgres_password: str = "password"
 
     # Database connection pool settings
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    db_pool_size: int = 100
+    db_max_overflow: int = 100
+    db_pool_timeout: int = 60
     db_echo: bool = False  # Set to True to log SQL queries
 
     @property
