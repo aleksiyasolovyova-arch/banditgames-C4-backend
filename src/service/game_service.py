@@ -19,13 +19,21 @@ class GameService:
 
     def create_game(
         self,
+        game_id: str,
         player_one: Player,
         player_two: Player,
         rows: int = 6,
         cols: int = 7
     ) -> Game:
+
+        # Check if game exists to be safe (idempotency)
+        existing_game = self._repository.get(game_id)
+        if existing_game:
+            return existing_game
+
+
         game = Game(
-            game_id=str(uuid.uuid4()),
+            game_id=game_id,
             rows=rows,
             cols=cols,
             player_one=player_one,

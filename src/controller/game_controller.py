@@ -54,6 +54,7 @@ async def create_game(
         )
 
         game = game_service.create_game(
+            game_id=dto.game_id,
             player_one=player_one,
             player_two=player_two,
             rows=dto.rows,

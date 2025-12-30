@@ -10,6 +10,8 @@ class PlayerRequest(BaseModel):
 
 
 class CreateGameRequest(BaseModel):
+    game_id: str = Field(..., alias="gameId")
+
     rows: int = Field(default=6, ge=4, le=10)
     cols: int = Field(default=7, ge=4, le=10)
 
