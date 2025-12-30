@@ -190,6 +190,7 @@ class RabbitMQEventPublisher:
             "eventType": "achievement.unlocked",
             "timestamp": datetime.now(UTC).isoformat(),
             "playerId": event_data["playerId"],
+            "gameId": event_data["gameId"],
             "achievementType": event_data["achievementType"],
             "title": event_data["title"],
             "description": event_data["description"],
